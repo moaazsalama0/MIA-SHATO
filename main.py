@@ -5,13 +5,6 @@ from stt_processor import create_stt_processor
 
 app = FastAPI(title="STT Service")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 stt_processor = create_stt_processor()
 
 @app.post("/transcribe")
@@ -38,4 +31,5 @@ async def transcribe(file: UploadFile = File(...)):
     return result
 
 if __name__ == "__main__":
+
     uvicorn.run("main:app", host="0.0.0.0", port=8003, reload=False)

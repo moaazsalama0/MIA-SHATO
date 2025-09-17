@@ -21,4 +21,4 @@ COPY . .
 EXPOSE 9000
 
 # Create a startup script that handles model pulling and server startup
-CMD ["/bin/bash", "-c", "ollama serve & sleep 3 && uvicorn app.api_rag:app --host 0.0.0.0 --port 9000"]
+CMD ["/bin/bash", "-c", "ollama serve & sleep 5 && ollama pull gemma3:270m && uvicorn app.api_rag:app --host 0.0.0.0 --port 9000"]

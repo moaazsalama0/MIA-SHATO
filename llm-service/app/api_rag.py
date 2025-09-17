@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 # ---------------- Config ----------------
-DATA_DIR = "./data"
+DATA_DIR = "/app/data"
 CHROMA_COLLECTION = "shato_examples"
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 TOP_K = 4
@@ -76,7 +76,7 @@ app = FastAPI(title="SHATO RAG API", version="2.1 (no validation)")
 class QueryRequest(BaseModel):
     message: str
 
-@app.post("/chat")
+@app.post("/generate")
 def chat(req: QueryRequest):
     prompt = req.message.strip()
     if not prompt:

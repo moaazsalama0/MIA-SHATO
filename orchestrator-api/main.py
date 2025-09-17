@@ -50,19 +50,25 @@ async def process_audio(audio: UploadFile = File(...)):
         # Step 1: Send audio to STT
         logger.info(f"[{request_id}] Sending audio to STT service...")
         stt_data = await call_service(STT_URL, files={"audio": (audio.filename, await audio.read(), audio.content_type)})
-        transcription = stt_data.get("text")
+        transcription = stt_data.get("transcribed_text")
         if not transcription:
             raise HTTPException(status_code=502, detail="STT did not return text")
         logger.info(f"[{request_id}] STT transcription: {transcription}")
 
         # Step 2: Send text to LLM
         logger.info(f"[{request_id}] Sending text to LLM...")
-        llm_data = await call_service(LLM_URL, payload={"input_text": transcription})
-        cmd_json = llm_data.get("command_json")
-        verbal_response = llm_data.get("verbal_response", "Command processed.")
-        if not cmd_json:
-            raise HTTPException(status_code=502, detail="LLM did not return command_json")
-        logger.info(f"[{request_id}] LLM output received.")
+        llm_data = await call_service(LLM_URL, payload={"message": transcription})  # Changed to "message"
+         # Extract data from your RAG API response format
+        model_json = llm_data.get("model_json", {})
+        cmd_json = {
+            "command": model_json.get("command"),
+            "command_params": model_json.get("command_params", {})
+        }
+        verbal_response = model_json.get("response", "Command processed.")
+        
+        if not cmd_json["command"]:
+            raise HTTPException(status_code=502, detail="LLM did not return valid command")
+        logger.info(f"[{request_id}] LLM output received: {cmd_json}")
 
         # Step 3: Validate command
         logger.info(f"[{request_id}] Sending command to Validator...")
@@ -79,7 +85,7 @@ async def process_audio(audio: UploadFile = File(...)):
             request_id=request_id,
             status="success",
             transcription=transcription,
-            llm_output=llm_data,
+            llm_output=llm_data,  # Full LLM response
             validation_output=val_data,
             tts_audio_url=tts_audio_url,
             error=None,

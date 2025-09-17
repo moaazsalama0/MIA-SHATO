@@ -21,11 +21,6 @@ services:
     ports:
       - "8003:8003"
 
-  llm:
-    build: ./llm-service
-    ports:
-      - "8002:8002"
-
   validator:
     build: ./robot-validator-api
     ports:
@@ -35,3 +30,24 @@ services:
     build: ./tts-service
     ports:
       - "8004:8004"
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"   # expose Ollama API
+    volumes:
+      - ollama_models:/root/.ollama   # persist downloaded models
+    restart: unless-stopped
+  llm:
+    build: ./llm-service
+    container_name: llm-service
+    ports:
+      - "9000:9000"     # expose your FastAPI service
+    environment:
+      - OLLAMA_URL=http://ollama:11434/api/generate   # use service name, not localhost
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+volumes:
+  ollama_models:

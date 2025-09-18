@@ -35,11 +35,14 @@ async def transcribe(file: UploadFile = File(...)):
     if not result["success"]:
         raise HTTPException(status_code=500, detail=result["error"])
     
-    return result
+    return {
+        "text": result["transcribed_text"],
+        "success": result["success"]
+    }
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "tts-service"}
+    return {"status": "healthy", "service": "stt-service"}
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8003, reload=False)

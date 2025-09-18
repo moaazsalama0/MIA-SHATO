@@ -1,37 +1,65 @@
 services:
-  ui:
-    build: ./ui-service
+  # -------------------------------
+  # 1. UI Service
+  # -------------------------------
+  ui-service:
+    build:
+      context: ./ui-service  # path to your UI Dockerfile
+    container_name: ui-service
     ports:
-      - "7860:7860"
-    depends_on:
-      - orchestrator
-
+      - "7860:7860"   # Host:Container
+    environment:
+      - ORCHESTRATOR_URL=http://orchestrator:8000/process_audio/  # placeholder for future orchestrator
+    networks:
+      - shato-network
+  # -------------------------------
+    # 2. Orchestrator
+  # -------------------------------
   orchestrator:
-    build: ./orchestrator-api
+    build:
+      context: ./orchestrator
+    container_name: orchestrator
     ports:
       - "8000:8000"
+    networks:
+      - shato-network
     depends_on:
-      - stt
-      - llm
-      - validator
-      - tts
-
-  stt:
-    build: ./stt-service
+      - stt-service
+      - llm-service
+    environment:
+      - LLM_URL=http://llm-service:9000
+  # -------------------------------
+    # 2. STT-Service
+  # -------------------------------
+  stt-service:
+    build:
+      context: ./stt-service
+    container_name: stt-service
     ports:
       - "8003:8003"
+    networks:
+      - shato-network    
 
-  llm:
+  # -------------------------------
+    # 3. LLM-Service
+  # -------------------------------
+  llm-service:
     build: ./llm-service
+    container_name: llm-service
     ports:
-      - "8002:8002"
-
-  validator:
-    build: ./robot-validator-api
-    ports:
-      - "8001:8001"
-
-  tts:
-    build: ./tts-service
-    ports:
-      - "8004:8004"
+      - "9000:9000"    # FastAPI
+      - "11434:11434"  # Ollama
+    depends_on:
+      - stt-service
+    networks:
+      - shato-network
+    environment:
+      - OLLAMA_URL=http://llm-service:11434
+  
+# -------------------------------
+# Network for internal service communication
+# -------------------------------
+networks:
+  shato-network:
+    name: shato-network
+    driver: bridge

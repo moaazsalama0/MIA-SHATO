@@ -3,16 +3,23 @@ import requests
 import uuid
 import os
 
-ORCHESTRATOR_URL = "http://orchestrator:8000/process_audio/"
+ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://localhost:8000/process_audio/")
 
+ALLOWED_FORMATS = ["wav", "mp3", "m4a", "flac"]
 def process_audio_ui(audio_file):
     if not audio_file:
         return "No audio provided", None, None, None, None
 
-    # Prepare file
+    # Check file extension
+    file_ext = audio_file.split('.')[-1].lower()
+    if file_ext not in ALLOWED_FORMATS:
+        return f"Unsupported format. Use: {ALLOWED_FORMATS}", None, None, None, None
+
+    # Prepare file and send to orchestrator
     try:
         with open(audio_file, "rb") as f:
-            files = {"audio": (str(uuid.uuid4()) + ".wav", f, "audio/wav")}
+            # Use 'file' as key to match FastAPI endpoint
+            files = {"file": (str(uuid.uuid4()) + f".{file_ext}", f, f"audio/{file_ext}")}
             response = requests.post(ORCHESTRATOR_URL, files=files, timeout=60)
             response.raise_for_status()
             data = response.json()

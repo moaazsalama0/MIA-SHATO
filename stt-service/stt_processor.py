@@ -86,6 +86,5 @@ class STTProcessor:
                 "success": False
             }
         
-def create_stt_processor(model_name: str = "small"):
+def create_stt_processor(model_name: str = "tiny"):
     return STTProcessor(model_name=model_name)
-

@@ -6,7 +6,7 @@ import httpx
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 # ----------------- CONFIG -----------------
-LLM_URL = "http://llm:8002/generate"
+LLM_URL = "http://llm:9000/generate"
 VALIDATOR_URL = "http://validator:8001/execute_command"
 STT_URL = "http://stt:8003/transcribe"
 TTS_URL = "http://tts:8004/speak"

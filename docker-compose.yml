@@ -54,7 +54,7 @@ services:
     networks:
       - shato-network
     environment:
-      - OLLAMA_URL=http://llm-service:11434
+      - OLLAMA_URL=http://127.0.0.1:11434/
   
 # -------------------------------
 # Network for internal service communication

@@ -1,17 +1,22 @@
 """
-Enhanced orchestrator with better error handling and debugging.
+Enhanced orchestrator with validator service integration and TTS support.
 Replace your orchestrator/orchestrator.py with this version.
 """
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import StreamingResponse
 import requests
 import os
 import traceback
+import io
+import base64
 
 app = FastAPI(title="SHATO Orchestrator")
 
 STT_URL = "http://stt-service:8003/transcribe"
 LLM_URL = os.getenv("LLM_URL", "http://llm-service:9000")
+VALIDATOR_URL = os.getenv("VALIDATOR_URL", "http://robot-validator:8001")
+TTS_URL = os.getenv("TTS_URL", "http://tts-service:8004")
 
 def call_llm(transcription_text: str):
     if not transcription_text:
@@ -25,7 +30,6 @@ def call_llm(transcription_text: str):
         print(f"[DEBUG] Sending to LLM-service at {llm_endpoint}")
         print(f"[DEBUG] LLM payload: {payload}")
         
-        # Add more detailed request logging
         r = requests.post(llm_endpoint, json=payload, timeout=60)
         
         print(f"[DEBUG] LLM response status: {r.status_code}")
@@ -73,6 +77,177 @@ def call_llm(transcription_text: str):
         traceback.print_exc()
         return {"llm_output": None, "model_raw": None, "retrieved": None, "error": error_msg}
 
+def call_validator(llm_output):
+    """Call the validator service to validate and execute commands"""
+    if not llm_output or not isinstance(llm_output, dict):
+        print("[DEBUG] No valid LLM output to validate")
+        return {"validation_output": None, "error": "No LLM output to validate"}
+    
+    command = llm_output.get("command")
+    command_params = llm_output.get("command_params")
+    
+    # Skip validation if no command or command is null
+    if not command or command == "null":
+        print("[DEBUG] No command to validate - skipping validator")
+        return {"validation_output": {"status": "skipped", "reason": "No command to validate"}, "error": None}
+    
+    try:
+        validator_endpoint = f"{VALIDATOR_URL}/execute_command"
+        payload = {
+            "command": command,
+            "command_params": command_params or {}
+        }
+        
+        print(f"[DEBUG] Sending to Validator at {validator_endpoint}")
+        print(f"[DEBUG] Validator payload: {payload}")
+        
+        r = requests.post(validator_endpoint, json=payload, timeout=30)
+        
+        print(f"[DEBUG] Validator response status: {r.status_code}")
+        
+        if r.status_code == 200:
+            data = r.json()
+            print(f"[DEBUG] Validator response data: {data}")
+            return {"validation_output": data, "error": None}
+        else:
+            # Get error details
+            try:
+                error_data = r.json()
+                error_detail = error_data.get("detail", f"Validator returned {r.status_code}")
+            except:
+                error_detail = f"Validator returned {r.status_code}: {r.text}"
+            
+            print(f"[ERROR] Validator error: {error_detail}")
+            return {
+                "validation_output": {
+                    "status": "error", 
+                    "error": error_detail
+                }, 
+                "error": f"Validation failed: {error_detail}"
+            }
+        
+    except requests.exceptions.ConnectionError as e:
+        error_msg = f"Cannot connect to Validator service at {VALIDATOR_URL}: {e}"
+        print(f"[ERROR] {error_msg}")
+        return {
+            "validation_output": {"status": "error", "error": "Validator service unavailable"}, 
+            "error": error_msg
+        }
+        
+    except requests.exceptions.Timeout as e:
+        error_msg = f"Validator request timed out: {e}"
+        print(f"[ERROR] {error_msg}")
+        return {
+            "validation_output": {"status": "error", "error": "Validator timeout"}, 
+            "error": error_msg
+        }
+        
+    except Exception as e:
+        error_msg = f"Unexpected validator error: {e}"
+        print(f"[ERROR] {error_msg}")
+        traceback.print_exc()
+        return {
+            "validation_output": {"status": "error", "error": str(e)}, 
+            "error": error_msg
+        }
+
+def call_tts(text: str, voice: str = "af_heart"):
+    """Call the TTS service to convert text to speech"""
+    if not text or not text.strip():
+        print("[DEBUG] No text provided for TTS")
+        return {"tts_audio_data": None, "error": "No text to convert to speech"}
+    
+    try:
+        tts_endpoint = f"{TTS_URL}/speak"
+        payload = {
+            "text": text,
+            "voice": voice
+        }
+        
+        print(f"[DEBUG] Sending to TTS service at {tts_endpoint}")
+        print(f"[DEBUG] TTS payload: {payload}")
+        
+        r = requests.post(tts_endpoint, json=payload, timeout=30)
+        
+        print(f"[DEBUG] TTS response status: {r.status_code}")
+        
+        if r.status_code == 200:
+            audio_data = r.content
+            print(f"[DEBUG] TTS generated {len(audio_data)} bytes of audio")
+            
+            # Convert to base64 for JSON response
+            audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+            
+            return {
+                "tts_audio_data": audio_base64,
+                "audio_size": len(audio_data),
+                "error": None
+            }
+        else:
+            # Get error details
+            try:
+                error_data = r.json()
+                error_detail = error_data.get("detail", f"TTS service returned {r.status_code}")
+            except:
+                error_detail = f"TTS service returned {r.status_code}: {r.text}"
+            
+            print(f"[ERROR] TTS error: {error_detail}")
+            return {
+                "tts_audio_data": None,
+                "error": f"TTS generation failed: {error_detail}"
+            }
+        
+    except requests.exceptions.ConnectionError as e:
+        error_msg = f"Cannot connect to TTS service at {TTS_URL}: {e}"
+        print(f"[ERROR] {error_msg}")
+        return {
+            "tts_audio_data": None,
+            "error": error_msg
+        }
+        
+    except requests.exceptions.Timeout as e:
+        error_msg = f"TTS request timed out: {e}"
+        print(f"[ERROR] {error_msg}")
+        return {
+            "tts_audio_data": None,
+            "error": error_msg
+        }
+        
+    except Exception as e:
+        error_msg = f"Unexpected TTS error: {e}"
+        print(f"[ERROR] {error_msg}")
+        traceback.print_exc()
+        return {
+            "tts_audio_data": None,
+            "error": error_msg
+        }
+
+def get_response_text(llm_output, validation_output):
+    """Extract the most appropriate text to convert to speech"""
+    
+    # Priority 1: If there's a validation response with a message
+    if validation_output and isinstance(validation_output, dict):
+        if validation_output.get("message"):
+            return validation_output["message"]
+        if validation_output.get("response"):
+            return validation_output["response"]
+        if validation_output.get("status") == "success" and validation_output.get("result"):
+            return f"Command executed successfully: {validation_output['result']}"
+        if validation_output.get("status") == "error":
+            return f"Command failed: {validation_output.get('error', 'Unknown error')}"
+    
+    # Priority 2: LLM response text
+    if llm_output and isinstance(llm_output, dict):
+        if llm_output.get("response"):
+            return llm_output["response"]
+        if llm_output.get("message"):
+            return llm_output["message"]
+        if llm_output.get("text"):
+            return llm_output["text"]
+    
+    # Fallback
+    return "I processed your request but have no specific response to provide."
+
 @app.post("/process_audio/")
 async def process_audio(file: UploadFile = File(...)):
     if not file.filename:
@@ -86,7 +261,7 @@ async def process_audio(file: UploadFile = File(...)):
         
         files = {"file": (file.filename, audio_bytes, "audio/wav")}
 
-        # Step 1: Call STT with better error handling
+        # Step 1: Call STT
         try:
             print(f"[DEBUG] Sending audio to STT-service: {file.filename}")
             stt_response = requests.post(STT_URL, files=files, timeout=60)
@@ -123,7 +298,7 @@ async def process_audio(file: UploadFile = File(...)):
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=error_msg)
 
-        # Extract transcription with fallback
+        # Extract transcription
         transcription = stt_json.get("text", "") or stt_json.get("transcribed_text", "")
         
         if not transcription:
@@ -135,14 +310,40 @@ async def process_audio(file: UploadFile = File(...)):
         # Step 2: Call LLM
         llm_result = call_llm(transcription)
         print(f"[DEBUG] LLM result: {llm_result}")
+        
+        # Step 3: Call Validator if we have a command
+        llm_output = llm_result.get("llm_output")
+        validator_result = call_validator(llm_output)
+        print(f"[DEBUG] Validator result: {validator_result}")
+        
+        # Step 4: Generate TTS response
+        validation_output = validator_result.get("validation_output")
+        response_text = get_response_text(llm_output, validation_output)
+        print(f"[DEBUG] Response text for TTS: '{response_text}'")
+        
+        tts_result = call_tts(response_text)
+        print(f"[DEBUG] TTS result: {tts_result}")
 
-        # Step 3: Return combined response
+        # Step 5: Combine errors
+        combined_errors = []
+        if llm_result.get("error"):
+            combined_errors.append(f"LLM: {llm_result['error']}")
+        if validator_result.get("error"):
+            combined_errors.append(f"Validator: {validator_result['error']}")
+        if tts_result.get("error"):
+            combined_errors.append(f"TTS: {tts_result['error']}")
+        
+        final_error = "; ".join(combined_errors) if combined_errors else None
+
+        # Step 6: Return combined response
         response = {
             "transcription": transcription,
-            "llm_output": llm_result.get("llm_output"),
-            "validation_output": {},
-            "tts_audio_url": None,
-            "error": llm_result.get("error")
+            "llm_output": llm_output,
+            "validation_output": validation_output,
+            "tts_audio_base64": tts_result.get("tts_audio_data"),
+            "tts_audio_size": tts_result.get("audio_size"),
+            "response_text": response_text,
+            "error": final_error
         }
         
         print(f"[DEBUG] Final response: {response}")
@@ -157,15 +358,91 @@ async def process_audio(file: UploadFile = File(...)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_msg)
 
+@app.get("/tts/{text}")
+async def direct_tts(text: str, voice: str = "af_heart"):
+    """Direct TTS endpoint for testing"""
+    tts_result = call_tts(text, voice)
+    
+    if tts_result.get("error"):
+        raise HTTPException(status_code=500, detail=tts_result["error"])
+    
+    if not tts_result.get("tts_audio_data"):
+        raise HTTPException(status_code=500, detail="No audio data generated")
+    
+    # Decode base64 audio data
+    audio_data = base64.b64decode(tts_result["tts_audio_data"])
+    
+    return StreamingResponse(
+        io.BytesIO(audio_data),
+        media_type="audio/wav",
+        headers={"Content-Disposition": "attachment; filename=speech.wav"}
+    )
+
+@app.post("/tts")
+async def tts_endpoint(text: str, voice: str = "af_heart"):
+    """JSON TTS endpoint"""
+    tts_result = call_tts(text, voice)
+    
+    if tts_result.get("error"):
+        raise HTTPException(status_code=500, detail=tts_result["error"])
+    
+    return {
+        "audio_base64": tts_result.get("tts_audio_data"),
+        "audio_size": tts_result.get("audio_size"),
+        "text": text,
+        "voice": voice
+    }
+
 @app.get("/")
 def root():
     return {
         "status": "ok",
         "service": "shato-orchestrator",
-        "stt_url": STT_URL,
-        "llm_url": LLM_URL
+        "endpoints": {
+            "stt_url": STT_URL,
+            "llm_url": LLM_URL,
+            "validator_url": VALIDATOR_URL,
+            "tts_url": TTS_URL
+        }
     }
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "service": "orchestrator"}
+    # Test connectivity to all services
+    services_status = {}
+    
+    # Test LLM
+    try:
+        r = requests.get(f"{LLM_URL}/health", timeout=5)
+        services_status["llm"] = "healthy" if r.status_code == 200 else "unhealthy"
+    except:
+        services_status["llm"] = "unreachable"
+    
+    # Test STT
+    try:
+        r = requests.get(f"{STT_URL.replace('/transcribe', '/health')}", timeout=5)
+        services_status["stt"] = "healthy" if r.status_code == 200 else "unhealthy"
+    except:
+        services_status["stt"] = "unreachable"
+    
+    # Test Validator
+    try:
+        r = requests.get(f"{VALIDATOR_URL}/health", timeout=5)
+        services_status["validator"] = "healthy" if r.status_code == 200 else "unhealthy"
+    except:
+        services_status["validator"] = "unreachable"
+    
+    # Test TTS
+    try:
+        r = requests.get(f"{TTS_URL}/health", timeout=5)
+        services_status["tts"] = "healthy" if r.status_code == 200 else "unhealthy"
+    except:
+        services_status["tts"] = "unreachable"
+    
+    overall_status = "healthy" if all(s == "healthy" for s in services_status.values()) else "degraded"
+    
+    return {
+        "status": overall_status, 
+        "service": "orchestrator",
+        "dependencies": services_status
+    }

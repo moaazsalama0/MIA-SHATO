@@ -2,23 +2,31 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies (needed for soundfile + audio ops)
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    ffmpeg \
+    build-essential \
     libsndfile1 \
-    git \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first (layer caching)
+# Copy requirements first for better caching
 COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy application code
 COPY . .
 
+# Create non-root user for security
+RUN useradd -m -u 1000 ttsuser && chown -R ttsuser:ttsuser /app
+USER ttsuser
+
+# Expose port
 EXPOSE 8004
 
-CMD ["python", "main.py"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8004/health')" || exit 1
 
+# Run the application
+CMD ["python", "main.py"]

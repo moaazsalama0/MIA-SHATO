@@ -52,6 +52,19 @@
     "type": "successful_command"
   },
   {
+  "user_input": "Navigate to coordinates 22 and 6",
+  "expected_output": {
+    "response": "Navigating to coordinates 22 and 6.",
+    "command": "move_to",
+    "command_params": {
+      "x": 22.0,
+      "y": 6.0
+    }
+  },
+  "category": "move_to",
+  "type": "successful_command"
+},
+{
     "user_input": "travel to 12.3, 45.7",
     "expected_output": {
       "response": "Traveling to coordinates 12.3, 45.7",

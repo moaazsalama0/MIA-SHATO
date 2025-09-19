@@ -151,21 +151,30 @@ def call_validator(llm_output):
             "error": error_msg
         }
 
-def call_tts(text: str, voice: str = "af_heart"):
-    """Call the TTS service to convert text to speech"""
+def call_tts(text: str, voice: str = "af_heart", response_type: str = "chat"):
+    """Call the TTS service to convert text to speech with voice selection based on response type"""
     if not text or not text.strip():
         print("[DEBUG] No text provided for TTS")
         return {"tts_audio_data": None, "error": "No text to convert to speech"}
+    
+    # Select voice based on response type
+    voice_mapping = {
+        "success": "af_heart",      # Friendly voice for successful commands
+        "error": "af_bella",        # Different voice for errors (more serious tone)
+        "chat": "af_heart"          # Default friendly voice for chat responses
+    }
+    
+    selected_voice = voice_mapping.get(response_type, voice)
     
     try:
         tts_endpoint = f"{TTS_URL}/speak"
         payload = {
             "text": text,
-            "voice": voice
+            "voice": selected_voice
         }
         
         print(f"[DEBUG] Sending to TTS service at {tts_endpoint}")
-        print(f"[DEBUG] TTS payload: {payload}")
+        print(f"[DEBUG] TTS payload: {payload} (response_type: {response_type})")
         
         r = requests.post(tts_endpoint, json=payload, timeout=30)
         
@@ -181,6 +190,8 @@ def call_tts(text: str, voice: str = "af_heart"):
             return {
                 "tts_audio_data": audio_base64,
                 "audio_size": len(audio_data),
+                "voice_used": selected_voice,
+                "response_type": response_type,
                 "error": None
             }
         else:
@@ -222,31 +233,53 @@ def call_tts(text: str, voice: str = "af_heart"):
             "error": error_msg
         }
 
-def get_response_text(llm_output, validation_output):
-    """Extract the most appropriate text to convert to speech"""
+def get_response_text_and_type(llm_output, validation_output):
+    """Extract the most appropriate text to convert to speech and determine response type"""
     
-    # Priority 1: If there's a validation response with a message
+    # Determine response type and text based on validation status
     if validation_output and isinstance(validation_output, dict):
-        if validation_output.get("message"):
-            return validation_output["message"]
-        if validation_output.get("response"):
-            return validation_output["response"]
-        if validation_output.get("status") == "success" and validation_output.get("result"):
-            return f"Command executed successfully: {validation_output['result']}"
-        if validation_output.get("status") == "error":
-            return f"Command failed: {validation_output.get('error', 'Unknown error')}"
+        validation_status = validation_output.get("status", "").lower()
+        
+        if validation_status == "success":
+            # Command executed successfully - use LLM response
+            response_text = None
+            if llm_output and isinstance(llm_output, dict):
+                response_text = llm_output.get("response")
+            
+            if not response_text:
+                # Fallback success message
+                command_name = ""
+                if validation_output.get("data", {}).get("command"):
+                    command_name = f" '{validation_output['data']['command']}'"
+                response_text = f"Command{command_name} executed successfully."
+            
+            return response_text, "success"
+            
+        elif validation_status == "error":
+            # Command failed - create error message
+            error_detail = validation_output.get("error", "Unknown error")
+            response_text = f"Command failed: {error_detail}"
+            return response_text, "error"
+            
+        elif validation_status == "skipped":
+            # No command to execute - this is a chat response
+            if llm_output and isinstance(llm_output, dict):
+                response_text = llm_output.get("response")
+                if response_text:
+                    return response_text, "chat"
     
-    # Priority 2: LLM response text
+    # Fallback for chat responses when no validation occurred
     if llm_output and isinstance(llm_output, dict):
-        if llm_output.get("response"):
-            return llm_output["response"]
+        response_text = llm_output.get("response")
+        if response_text:
+            return response_text, "chat"
         if llm_output.get("message"):
-            return llm_output["message"]
+            return llm_output["message"], "chat"
         if llm_output.get("text"):
-            return llm_output["text"]
+            return llm_output["text"], "chat"
     
-    # Fallback
-    return "I processed your request but have no specific response to provide."
+    # Final fallback
+    return "I processed your request but have no specific response to provide.", "chat"
 
 @app.post("/process_audio/")
 async def process_audio(file: UploadFile = File(...)):
@@ -318,10 +351,10 @@ async def process_audio(file: UploadFile = File(...)):
         
         # Step 4: Generate TTS response
         validation_output = validator_result.get("validation_output")
-        response_text = get_response_text(llm_output, validation_output)
-        print(f"[DEBUG] Response text for TTS: '{response_text}'")
+        response_text, response_type = get_response_text_and_type(llm_output, validation_output)
+        print(f"[DEBUG] Response text for TTS: '{response_text}' (type: {response_type})")
         
-        tts_result = call_tts(response_text)
+        tts_result = call_tts(response_text, response_type=response_type)
         print(f"[DEBUG] TTS result: {tts_result}")
 
         # Step 5: Combine errors
@@ -342,7 +375,9 @@ async def process_audio(file: UploadFile = File(...)):
             "validation_output": validation_output,
             "tts_audio_base64": tts_result.get("tts_audio_data"),
             "tts_audio_size": tts_result.get("audio_size"),
+            "tts_voice_used": tts_result.get("voice_used"),
             "response_text": response_text,
+            "response_type": response_type,
             "error": final_error
         }
         

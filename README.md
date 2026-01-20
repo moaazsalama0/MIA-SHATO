@@ -1,3 +1,7 @@
+![Python](https://img.shields.io/badge/Python-3.10+-blue)
+![Docker](https://img.shields.io/badge/Docker-Enabled-blue)
+![Microservices](https://img.shields.io/badge/Architecture-Microservices-success)
+
 # SHATO — Speech-to-Action Orchestrator
 
 Compact summary

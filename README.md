@@ -5,7 +5,7 @@
 # SHATO — Speech-to-Action Orchestrator
 
 Compact summary
-- SHATO is a microservice stack that converts user audio into actions and spoken responses: STT → LLM (RAG) → Validator → TTS. It includes a Gradio UI for quick demos and Docker Compose for local runs.
+- SHATO is a microservice stack that converts user audio into actions and spoken responses: STT -> LLM (RAG) -> Validator -> TTS. It includes a Gradio UI for quick demos and Docker Compose for local runs.
 
 Repository layout (key files)
 - docker-compose.yml — Compose orchestration for all services and network.
@@ -70,5 +70,3 @@ Contributing
 - Create PRs against main; include tests where applicable and keep changes per-service.
 - Follow consistent formatting and add docs for new endpoints.
 
-License
-- Add license file (LICENSE) as appropriate for your project.
